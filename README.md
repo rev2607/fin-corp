@@ -34,6 +34,13 @@ A premium, minimal CRM-style mobile app for finance consultants to manage client
 npm install
 ```
 
+**Note:** If you encounter version conflicts, use Expo's install command to automatically get compatible versions:
+```bash
+npx expo install --fix
+```
+
+This will ensure all Expo packages are compatible with SDK 54.
+
 2. Start the development server:
 ```bash
 npm start

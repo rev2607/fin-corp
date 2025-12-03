@@ -13,13 +13,14 @@ import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { theme } from '../theme';
 import { generateId } from '../utils/idGenerator';
+import { normalizeDateForStorage } from '../utils/dateUtils';
 import { GlassCard } from '../components/GlassCard';
 import { PrimaryButton } from '../components/PrimaryButton';
 import { InputField } from '../components/InputField';
 import { DatePickerField } from '../components/DatePickerField';
 import { BankPicker } from '../components/BankPicker';
 import { useClients } from '../hooks/useClients';
-import { Client, RootStackParamList } from '../types';
+import { Client, ClientFormData, RootStackParamList } from '../types';
 
 type NewClientScreenRouteProp = RouteProp<RootStackParamList, 'NewClient'>;
 type NewClientScreenNavigationProp = StackNavigationProp<
@@ -33,7 +34,7 @@ export const NewClientScreen: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
-  const [formData, setFormData] = useState<Partial<Client>>({
+  const [formData, setFormData] = useState<ClientFormData>({
     nameOfCustomer: '',
     nameOfCoApplicant: '',
     contactNumber: '',
@@ -66,7 +67,11 @@ export const NewClientScreen: React.FC = () => {
   };
 
   const handleSave = async () => {
+    console.log('=== Starting save process ===');
+    console.log('Form data:', formData);
+    
     if (!validateForm()) {
+      console.log('Validation failed. Errors:', errors);
       return;
     }
 
@@ -83,22 +88,30 @@ export const NewClientScreen: React.FC = () => {
         securityInformation: formData.securityInformation?.trim() || '',
         loginBankName: formData.loginBankName!.trim(),
         followUpDate: formData.followUpDate
-          ? formData.followUpDate.toISOString()
+          ? normalizeDateForStorage(formData.followUpDate)
           : null,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
 
+      console.log('Client object to save:', client);
+      console.log('Calling saveClient...');
+      
       const success = await saveClient(client);
       
+      console.log('Save result:', success);
+      
       if (success) {
+        console.log('Save successful, navigating back...');
         navigation.goBack();
       } else {
+        console.error('Save returned false');
         Alert.alert('Error', 'Failed to save client. Please try again.');
       }
     } catch (error) {
       console.error('Error saving client:', error);
-      Alert.alert('Error', 'An unexpected error occurred. Please try again.');
+      console.error('Error stack:', error instanceof Error ? error.stack : 'No stack trace');
+      Alert.alert('Error', `An unexpected error occurred: ${error instanceof Error ? error.message : String(error)}`);
     } finally {
       setLoading(false);
     }
@@ -201,13 +214,10 @@ export const NewClientScreen: React.FC = () => {
           <GlassCard style={styles.card}>
             <DatePickerField
               label="Follow-up Date"
-              value={
-                formData.followUpDate ? new Date(formData.followUpDate) : null
-              }
+              value={formData.followUpDate}
               onChange={(date) =>
                 setFormData({ ...formData, followUpDate: date })
               }
-              minimumDate={new Date()}
             />
           </GlassCard>
         </ScrollView>

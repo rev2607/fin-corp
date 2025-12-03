@@ -68,7 +68,10 @@ export const notificationService = {
           data: { clientId: client.id },
           sound: true,
         },
-        trigger: notificationDate,
+        trigger: {
+          type: 'date',
+          date: notificationDate,
+        },
       });
 
       return notificationId;

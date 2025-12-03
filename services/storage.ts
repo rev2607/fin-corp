@@ -30,12 +30,18 @@ export const storageService = {
       const index = clients.findIndex((c) => c.id === client.id);
       
       if (index >= 0) {
-        clients[index] = { ...client, updatedAt: new Date().toISOString() };
+        // Update existing client - preserve createdAt, update updatedAt
+        clients[index] = { 
+          ...client, 
+          createdAt: clients[index].createdAt, // Preserve original createdAt
+          updatedAt: new Date().toISOString() 
+        };
       } else {
+        // New client - use provided timestamps or set new ones
         clients.push({
           ...client,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
+          createdAt: client.createdAt || new Date().toISOString(),
+          updatedAt: client.updatedAt || new Date().toISOString(),
         });
       }
       

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useLayoutEffect } from 'react';
 import {
   View,
   Text,
@@ -9,7 +9,12 @@ import {
   TouchableOpacity,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
+import {
+  useNavigation,
+  useRoute,
+  RouteProp,
+  useFocusEffect,
+} from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { format, parseISO } from 'date-fns';
 import { theme } from '../theme';
@@ -36,6 +41,7 @@ export const ClientDetailScreen: React.FC = () => {
   const { deleteClient } = useClients();
   const [client, setClient] = useState<Client | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [notificationInfo, setNotificationInfo] =
     useState<{ identifier: string; triggerDate: Date } | null>(null);
 
@@ -44,20 +50,57 @@ export const ClientDetailScreen: React.FC = () => {
     loadNotificationInfo();
   }, [clientId]);
 
+  // Reload client when screen comes into focus (e.g., after editing)
+  useFocusEffect(
+    React.useCallback(() => {
+      if (clientId) {
+        loadClient();
+        loadNotificationInfo();
+      }
+    }, [clientId])
+  );
+
+  useLayoutEffect(() => {
+    navigation.setOptions({
+      headerRight: () => (
+        <TouchableOpacity
+          onPress={() => navigation.navigate('EditClient', { clientId })}
+          style={styles.headerButton}
+          activeOpacity={0.7}
+        >
+          <Text style={styles.headerButtonText}>Edit</Text>
+        </TouchableOpacity>
+      ),
+    });
+  }, [navigation, clientId]);
+
   const loadClient = async () => {
     try {
       setLoading(true);
+      setError(null);
+      console.log('Loading client with ID:', clientId);
       const loadedClient = await storageService.getClientById(clientId);
       if (loadedClient) {
+        console.log('Client loaded successfully:', loadedClient.nameOfCustomer);
         setClient(loadedClient);
+        setError(null);
       } else {
-        Alert.alert('Error', 'Client not found');
-        navigation.goBack();
+        console.error('Client not found for ID:', clientId);
+        setError('Client not found');
+        // Don't navigate away immediately - let user see the error
+        setTimeout(() => {
+          navigation.goBack();
+        }, 2000);
       }
     } catch (error) {
       console.error('Error loading client:', error);
-      Alert.alert('Error', 'Failed to load client');
-      navigation.goBack();
+      console.error('Error details:', error instanceof Error ? error.stack : error);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      setError(`Failed to load client: ${errorMessage}`);
+      // Show error for 3 seconds before navigating back
+      setTimeout(() => {
+        navigation.goBack();
+      }, 3000);
     } finally {
       setLoading(false);
     }
@@ -65,10 +108,14 @@ export const ClientDetailScreen: React.FC = () => {
 
   const loadNotificationInfo = async () => {
     try {
+      // Make notification loading non-blocking - don't let errors prevent screen from loading
       const info = await notificationService.getClientNotificationInfo(clientId);
-      setNotificationInfo(info);
+      if (info) {
+        setNotificationInfo(info);
+      }
     } catch (error) {
-      console.error('Error loading notification info:', error);
+      // Silently ignore notification errors - they're not critical for viewing client details
+      console.warn('Could not load notification info (non-critical):', error);
     }
   };
 
@@ -94,11 +141,28 @@ export const ClientDetailScreen: React.FC = () => {
     );
   };
 
-  if (loading || !client) {
+  if (loading) {
     return (
       <SafeAreaView style={styles.container} edges={['top']}>
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={theme.colors.accent.gold} />
+          {error && <Text style={styles.errorText}>{error}</Text>}
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (error || !client) {
+    return (
+      <SafeAreaView style={styles.container} edges={['top']}>
+        <View style={styles.loadingContainer}>
+          <Text style={styles.errorText}>{error || 'Client not found'}</Text>
+          <TouchableOpacity
+            style={styles.backButton}
+            onPress={() => navigation.goBack()}
+          >
+            <Text style={styles.backButtonText}>Go Back</Text>
+          </TouchableOpacity>
         </View>
       </SafeAreaView>
     );
@@ -144,12 +208,21 @@ export const ClientDetailScreen: React.FC = () => {
           </GlassCard>
         )}
 
-        {client.requiredLoanAmount && (
+        {client.requiredLoanAmount && client.requiredLoanAmount.trim() && (
           <GlassCard style={styles.card}>
             <View style={styles.field}>
               <Text style={styles.fieldLabel}>Required Loan Amount</Text>
               <Text style={[styles.fieldValue, styles.amountValue]}>
-                ₹{parseInt(client.requiredLoanAmount).toLocaleString('en-IN')}
+                {(() => {
+                  try {
+                    const amount = parseInt(client.requiredLoanAmount);
+                    return isNaN(amount) 
+                      ? `₹${client.requiredLoanAmount}`
+                      : `₹${amount.toLocaleString('en-IN')}`;
+                  } catch (error) {
+                    return `₹${client.requiredLoanAmount}`;
+                  }
+                })()}
               </Text>
             </View>
           </GlassCard>
@@ -176,20 +249,32 @@ export const ClientDetailScreen: React.FC = () => {
             <View style={styles.field}>
               <Text style={styles.fieldLabel}>Follow-up Date</Text>
               <Text style={styles.fieldValue}>
-                {format(parseISO(client.followUpDate), 'dd MMMM yyyy')}
+                {(() => {
+                  try {
+                    return format(parseISO(client.followUpDate), 'dd MMMM yyyy');
+                  } catch (error) {
+                    console.error('Error formatting follow-up date:', error);
+                    return client.followUpDate;
+                  }
+                })()}
               </Text>
             </View>
           </GlassCard>
         )}
 
         {notificationInfo && (
-          <GlassCard style={[styles.card, styles.notificationCard]}>
+          <GlassCard style={StyleSheet.flatten([styles.card, styles.notificationCard])}>
             <View style={styles.field}>
               <Text style={styles.fieldLabel}>Notification</Text>
               <Text style={styles.notificationText}>
-                Follow-up reminder scheduled for{' '}
-                {format(notificationInfo.triggerDate, 'h:mm a')} on{' '}
-                {format(notificationInfo.triggerDate, 'dd MMM yyyy')}
+                {(() => {
+                  try {
+                    return `Follow-up reminder scheduled for ${format(notificationInfo.triggerDate, 'h:mm a')} on ${format(notificationInfo.triggerDate, 'dd MMM yyyy')}`;
+                  } catch (error) {
+                    console.error('Error formatting notification date:', error);
+                    return 'Follow-up reminder scheduled';
+                  }
+                })()}
               </Text>
             </View>
           </GlassCard>
@@ -199,14 +284,28 @@ export const ClientDetailScreen: React.FC = () => {
           <View style={styles.field}>
             <Text style={styles.fieldLabel}>Created</Text>
             <Text style={styles.fieldValue}>
-              {format(parseISO(client.createdAt), 'dd MMM yyyy, h:mm a')}
+              {(() => {
+                try {
+                  return format(parseISO(client.createdAt), 'dd MMM yyyy, h:mm a');
+                } catch (error) {
+                  console.error('Error formatting createdAt:', error);
+                  return client.createdAt;
+                }
+              })()}
             </Text>
           </View>
-          {client.updatedAt !== client.createdAt && (
+          {client.updatedAt && client.updatedAt !== client.createdAt && (
             <View style={[styles.field, styles.fieldTopMargin]}>
               <Text style={styles.fieldLabel}>Last Updated</Text>
               <Text style={styles.fieldValue}>
-                {format(parseISO(client.updatedAt), 'dd MMM yyyy, h:mm a')}
+                {(() => {
+                  try {
+                    return format(parseISO(client.updatedAt), 'dd MMM yyyy, h:mm a');
+                  } catch (error) {
+                    console.error('Error formatting updatedAt:', error);
+                    return client.updatedAt;
+                  }
+                })()}
               </Text>
             </View>
           )}
@@ -295,6 +394,35 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  headerButton: {
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: theme.spacing.sm,
+    marginRight: theme.spacing.sm,
+  },
+  headerButtonText: {
+    ...theme.typography.bodyBold,
+    color: theme.colors.accent.gold,
+    fontSize: 16,
+  },
+  errorText: {
+    ...theme.typography.body,
+    color: theme.colors.error,
+    marginTop: theme.spacing.md,
+    textAlign: 'center',
+    paddingHorizontal: theme.spacing.md,
+  },
+  backButton: {
+    marginTop: theme.spacing.lg,
+    paddingVertical: theme.spacing.md,
+    paddingHorizontal: theme.spacing.xl,
+    borderRadius: theme.borderRadius.md,
+    borderWidth: 1,
+    borderColor: theme.colors.accent.gold,
+  },
+  backButtonText: {
+    ...theme.typography.bodyBold,
+    color: theme.colors.accent.gold,
   },
 });
 

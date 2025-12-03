@@ -19,8 +19,9 @@ import { InputField } from '../components/InputField';
 import { DatePickerField } from '../components/DatePickerField';
 import { BankPicker } from '../components/BankPicker';
 import { useClients } from '../hooks/useClients';
-import { Client, RootStackParamList } from '../types';
+import { Client, ClientFormData, RootStackParamList } from '../types';
 import { storageService } from '../services/storage';
+import { normalizeDateForStorage } from '../utils/dateUtils';
 
 type EditClientScreenRouteProp = RouteProp<RootStackParamList, 'EditClient'>;
 type EditClientScreenNavigationProp = StackNavigationProp<
@@ -37,7 +38,7 @@ export const EditClientScreen: React.FC = () => {
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
-  const [formData, setFormData] = useState<Partial<Client>>({
+  const [formData, setFormData] = useState<ClientFormData>({
     nameOfCustomer: '',
     nameOfCoApplicant: '',
     contactNumber: '',
@@ -47,6 +48,7 @@ export const EditClientScreen: React.FC = () => {
     loginBankName: '',
     followUpDate: null,
   });
+  const [originalClient, setOriginalClient] = useState<Client | null>(null);
 
   useEffect(() => {
     loadClient();
@@ -57,8 +59,15 @@ export const EditClientScreen: React.FC = () => {
       setLoading(true);
       const client = await storageService.getClientById(clientId);
       if (client) {
+        setOriginalClient(client);
         setFormData({
-          ...client,
+          nameOfCustomer: client.nameOfCustomer,
+          nameOfCoApplicant: client.nameOfCoApplicant,
+          contactNumber: client.contactNumber,
+          referral: client.referral,
+          requiredLoanAmount: client.requiredLoanAmount,
+          securityInformation: client.securityInformation,
+          loginBankName: client.loginBankName,
           followUpDate: client.followUpDate
             ? new Date(client.followUpDate)
             : null,
@@ -115,9 +124,9 @@ export const EditClientScreen: React.FC = () => {
         securityInformation: formData.securityInformation?.trim() || '',
         loginBankName: formData.loginBankName!.trim(),
         followUpDate: formData.followUpDate
-          ? formData.followUpDate.toISOString()
+          ? normalizeDateForStorage(formData.followUpDate)
           : null,
-        createdAt: formData.createdAt || new Date().toISOString(),
+        createdAt: originalClient?.createdAt || new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
 
@@ -243,13 +252,10 @@ export const EditClientScreen: React.FC = () => {
           <GlassCard style={styles.card}>
             <DatePickerField
               label="Follow-up Date"
-              value={
-                formData.followUpDate ? new Date(formData.followUpDate) : null
-              }
+              value={formData.followUpDate}
               onChange={(date) =>
                 setFormData({ ...formData, followUpDate: date })
               }
-              minimumDate={new Date()}
             />
           </GlassCard>
         </ScrollView>

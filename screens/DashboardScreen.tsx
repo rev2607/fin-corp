@@ -1,18 +1,22 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useEffect } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
   RefreshControl,
+  TouchableOpacity,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { format, isToday, isTomorrow } from 'date-fns';
+import { format, isToday, isTomorrow, isPast, parseISO } from 'date-fns';
 import { useNavigation } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { theme } from '../theme';
 import { GlassCard } from '../components/GlassCard';
-import { PrimaryButton } from '../components/PrimaryButton';
+import { ProfilePicture } from '../components/ProfilePicture';
+import { StatusBadge } from '../components/StatusBadge';
+import { FloatingActionButton } from '../components/FloatingActionButton';
+import { Checkbox } from '../components/Checkbox';
 import { useClients } from '../hooks/useClients';
 import { RootStackParamList } from '../types';
 
@@ -23,7 +27,7 @@ type DashboardScreenNavigationProp = StackNavigationProp<
 
 export const DashboardScreen: React.FC = () => {
   const navigation = useNavigation<DashboardScreenNavigationProp>();
-  const { clients, loading, loadClients, getTodaysFollowUps, getUpcomingFollowUps } =
+  const { clients, loading, loadClients, getTodaysFollowUps, getOverdueFollowUps, getUpcomingFollowUps, markFollowUpCompleted } =
     useClients();
 
   const greeting = useMemo(() => {
@@ -34,13 +38,26 @@ export const DashboardScreen: React.FC = () => {
   }, []);
 
   const todaysFollowUps = useMemo(() => getTodaysFollowUps(), [getTodaysFollowUps]);
+  const overdueFollowUps = useMemo(() => getOverdueFollowUps(), [getOverdueFollowUps]);
   const upcomingFollowUps = useMemo(() => getUpcomingFollowUps(3), [getUpcomingFollowUps]);
+
+  const handleToggleFollowUp = async (clientId: string, currentStatus: boolean) => {
+    await markFollowUpCompleted(clientId, !currentStatus);
+  };
 
   const formatFollowUpDate = (dateString: string) => {
     const date = new Date(dateString);
     if (isToday(date)) return 'Today';
     if (isTomorrow(date)) return 'Tomorrow';
     return format(date, 'dd MMM');
+  };
+
+  const getStatusVariant = (followUpDate: string | null) => {
+    if (!followUpDate) return 'dueSoon';
+    const date = parseISO(followUpDate);
+    if (isPast(date) && !isToday(date)) return 'urgent';
+    if (isToday(date)) return 'today';
+    return 'dueSoon';
   };
 
   return (
@@ -61,44 +78,164 @@ export const DashboardScreen: React.FC = () => {
           <Text style={styles.subtitle}>Your client overview</Text>
         </View>
 
-        <GlassCard style={styles.statsCard}>
-          <Text style={styles.statsLabel}>Total Clients</Text>
+        {/* Total Clients Card - Premium Style */}
+        <GlassCard
+          style={styles.statsCard}
+          onPress={() => navigation.navigate('ClientList')}
+          variant="hover"
+        >
+          <Text style={styles.statsLabel}>TOTAL CLIENTS</Text>
           <Text style={styles.statsValue}>{clients.length}</Text>
         </GlassCard>
 
+        {/* Follow-ups Today Card */}
         <GlassCard style={styles.followUpsCard}>
           <View style={styles.followUpsHeader}>
             <Text style={styles.cardTitle}>Follow-ups Today</Text>
-            <View style={styles.badge}>
-              <Text style={styles.badgeText}>{todaysFollowUps.length}</Text>
-            </View>
+            {todaysFollowUps.length > 0 && (
+              <View style={styles.badge}>
+                <Text style={styles.badgeText}>{todaysFollowUps.length}</Text>
+              </View>
+            )}
           </View>
 
           {todaysFollowUps.length === 0 ? (
             <Text style={styles.emptyText}>No follow-ups scheduled for today</Text>
           ) : (
             <View style={styles.followUpsList}>
-              {todaysFollowUps.slice(0, 3).map((client) => (
-                <View key={client.id} style={styles.followUpItem}>
-                  <View style={styles.followUpContent}>
-                    <Text style={styles.followUpName}>
-                      {client.nameOfCustomer}
-                    </Text>
-                    <Text style={styles.followUpTime}>9:00 AM</Text>
+              {todaysFollowUps.slice(0, 3).map((client) => {
+                const isCompleted = client.followUpCompleted || false;
+                return (
+                  <View key={client.id} style={styles.followUpItem}>
+                    <Checkbox
+                      checked={isCompleted}
+                      onPress={() => handleToggleFollowUp(client.id, isCompleted)}
+                      size={22}
+                      style={styles.checkbox}
+                    />
+                    <TouchableOpacity
+                      style={styles.followUpContent}
+                      onPress={() => navigation.navigate('ClientDetail', { clientId: client.id })}
+                      activeOpacity={0.7}
+                    >
+                      <View style={styles.followUpLeft}>
+                        <ProfilePicture
+                          name={client.nameOfCustomer}
+                          size="small"
+                          style={styles.profilePic}
+                        />
+                        <View style={styles.followUpInfo}>
+                          <Text
+                            style={[
+                              styles.followUpName,
+                              isCompleted && styles.strikethrough,
+                            ]}
+                          >
+                            {client.nameOfCustomer}
+                          </Text>
+                          <Text
+                            style={[
+                              styles.followUpTime,
+                              isCompleted && styles.strikethroughMuted,
+                            ]}
+                          >
+                            9:00 AM
+                          </Text>
+                        </View>
+                      </View>
+                      <View style={styles.followUpRight}>
+                        <StatusBadge
+                          variant={getStatusVariant(client.followUpDate)}
+                          style={styles.statusBadge}
+                        >
+                          Today
+                        </StatusBadge>
+                      </View>
+                    </TouchableOpacity>
                   </View>
-                  <Text style={styles.followUpBank}>{client.loginBankName}</Text>
-                </View>
-              ))}
+                );
+              })}
             </View>
           )}
         </GlassCard>
 
+        {/* Overdue Follow-ups */}
+        {overdueFollowUps.length > 0 && (
+          <GlassCard style={styles.overdueCard}>
+            <View style={styles.followUpsHeader}>
+              <Text style={styles.cardTitle}>Overdue</Text>
+              <View style={[styles.badge, styles.urgentBadge]}>
+                <Text style={styles.badgeText}>{overdueFollowUps.length}</Text>
+              </View>
+            </View>
+            <View style={styles.followUpsList}>
+              {overdueFollowUps.slice(0, 5).map((client) => {
+                const isCompleted = client.followUpCompleted || false;
+                return (
+                  <View key={client.id} style={styles.followUpItem}>
+                    <Checkbox
+                      checked={isCompleted}
+                      onPress={() => handleToggleFollowUp(client.id, isCompleted)}
+                      size={22}
+                      style={styles.checkbox}
+                    />
+                    <TouchableOpacity
+                      style={styles.followUpContent}
+                      onPress={() => navigation.navigate('ClientDetail', { clientId: client.id })}
+                      activeOpacity={0.7}
+                    >
+                      <View style={styles.followUpLeft}>
+                        <ProfilePicture
+                          name={client.nameOfCustomer}
+                          size="small"
+                          style={styles.profilePic}
+                        />
+                        <View style={styles.followUpInfo}>
+                          <Text
+                            style={[
+                              styles.followUpName,
+                              isCompleted && styles.strikethrough,
+                            ]}
+                          >
+                            {client.nameOfCustomer}
+                          </Text>
+                          <Text
+                            style={[
+                              styles.followUpTime,
+                              isCompleted && styles.strikethroughMuted,
+                            ]}
+                          >
+                            {client.followUpDate
+                              ? format(parseISO(client.followUpDate), 'dd MMM yyyy')
+                              : 'No date'}
+                          </Text>
+                        </View>
+                      </View>
+                      <View style={styles.followUpRight}>
+                        <StatusBadge variant="urgent" style={styles.statusBadge}>
+                          Overdue
+                        </StatusBadge>
+                      </View>
+                    </TouchableOpacity>
+                  </View>
+                );
+              })}
+            </View>
+          </GlassCard>
+        )}
+
+        {/* Upcoming Follow-ups */}
         {upcomingFollowUps.length > 0 && (
           <GlassCard style={styles.upcomingCard}>
             <Text style={styles.cardTitle}>Upcoming</Text>
             <View style={styles.upcomingList}>
               {upcomingFollowUps.map((client) => (
-                <View key={client.id} style={styles.upcomingItem}>
+                <TouchableOpacity
+                  key={client.id}
+                  style={styles.upcomingItem}
+                  onPress={() => navigation.navigate('ClientDetail', { clientId: client.id })}
+                  activeOpacity={0.7}
+                >
                   <View style={styles.upcomingDate}>
                     <Text style={styles.upcomingDateText}>
                       {formatFollowUpDate(client.followUpDate!)}
@@ -110,27 +247,17 @@ export const DashboardScreen: React.FC = () => {
                     </Text>
                     <Text style={styles.upcomingBank}>{client.loginBankName}</Text>
                   </View>
-                </View>
+                </TouchableOpacity>
               ))}
             </View>
           </GlassCard>
         )}
-
-        <PrimaryButton
-          title="New Client"
-          onPress={() => navigation.navigate('NewClient')}
-          fullWidth
-          style={styles.newClientButton}
-        />
-
-        <PrimaryButton
-          title="View All Clients"
-          onPress={() => navigation.navigate('ClientList')}
-          variant="secondary"
-          fullWidth
-          style={styles.viewAllButton}
-        />
       </ScrollView>
+
+      {/* Floating Action Button */}
+      <FloatingActionButton
+        onPress={() => navigation.navigate('NewClient')}
+      />
     </SafeAreaView>
   );
 };
@@ -145,7 +272,7 @@ const styles = StyleSheet.create({
   },
   content: {
     padding: theme.spacing.md,
-    paddingBottom: theme.spacing.xxl,
+    paddingBottom: 100, // Space for FAB
   },
   header: {
     marginBottom: theme.spacing.lg,
@@ -162,15 +289,22 @@ const styles = StyleSheet.create({
   statsCard: {
     marginBottom: theme.spacing.md,
     padding: theme.spacing.lg,
+    backgroundColor: 'rgba(212, 175, 55, 0.1)',
+    borderColor: theme.colors.accent.gold,
+    borderWidth: 1,
   },
   statsLabel: {
     ...theme.typography.caption,
     color: theme.colors.text.secondary,
     marginBottom: theme.spacing.xs,
+    letterSpacing: 1,
+    textTransform: 'uppercase',
+    fontSize: 12,
   },
   statsValue: {
     ...theme.typography.h1,
     color: theme.colors.accent.gold,
+    fontSize: 48,
   },
   followUpsCard: {
     marginBottom: theme.spacing.md,
@@ -206,27 +340,46 @@ const styles = StyleSheet.create({
     gap: theme.spacing.md,
   },
   followUpItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
     paddingTop: theme.spacing.md,
     borderTopWidth: 1,
     borderTopColor: theme.colors.border.default,
   },
+  checkbox: {
+    marginRight: theme.spacing.md,
+  },
   followUpContent: {
+    flex: 1,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: theme.spacing.xs,
+  },
+  followUpLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  profilePic: {
+    marginRight: theme.spacing.md,
+  },
+  followUpInfo: {
+    flex: 1,
   },
   followUpName: {
     ...theme.typography.bodyBold,
     color: theme.colors.text.primary,
+    marginBottom: theme.spacing.xs / 2,
   },
   followUpTime: {
     ...theme.typography.caption,
     color: theme.colors.accent.gold,
   },
-  followUpBank: {
-    ...theme.typography.caption,
-    color: theme.colors.text.secondary,
+  followUpRight: {
+    alignItems: 'flex-end',
+  },
+  statusBadge: {
+    marginBottom: theme.spacing.xs,
   },
   upcomingCard: {
     marginBottom: theme.spacing.md,
@@ -262,12 +415,18 @@ const styles = StyleSheet.create({
     ...theme.typography.caption,
     color: theme.colors.text.secondary,
   },
-  newClientButton: {
-    marginTop: theme.spacing.lg,
+  overdueCard: {
     marginBottom: theme.spacing.md,
   },
-  viewAllButton: {
-    marginBottom: theme.spacing.md,
+  urgentBadge: {
+    backgroundColor: theme.colors.urgent || '#FF4444',
+  },
+  strikethrough: {
+    textDecorationLine: 'line-through',
+    opacity: 0.6,
+  },
+  strikethroughMuted: {
+    textDecorationLine: 'line-through',
+    opacity: 0.5,
   },
 });
-

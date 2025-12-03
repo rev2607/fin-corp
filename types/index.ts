@@ -8,8 +8,20 @@ export interface Client {
   securityInformation: string;
   loginBankName: string;
   followUpDate: string | null;
+  followUpCompleted?: boolean; // Track if follow-up is completed
   createdAt: string;
   updatedAt: string;
+}
+
+export interface ClientFormData {
+  nameOfCustomer: string;
+  nameOfCoApplicant: string;
+  contactNumber: string;
+  referral: string;
+  requiredLoanAmount: string;
+  securityInformation: string;
+  loginBankName: string;
+  followUpDate: Date | null;
 }
 
 export type RootStackParamList = {

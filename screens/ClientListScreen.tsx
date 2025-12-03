@@ -13,6 +13,8 @@ import { StackNavigationProp } from '@react-navigation/stack';
 import { format, isToday, isPast, parseISO } from 'date-fns';
 import { theme } from '../theme';
 import { GlassCard } from '../components/GlassCard';
+import { ProfilePicture } from '../components/ProfilePicture';
+import { StatusBadge } from '../components/StatusBadge';
 import { useClients } from '../hooks/useClients';
 import { Client } from '../types';
 import { RootStackParamList } from '../types';
@@ -26,14 +28,32 @@ export const ClientListScreen: React.FC = () => {
   const navigation = useNavigation<ClientListScreenNavigationProp>();
   const { clients, loading } = useClients();
   const [searchQuery, setSearchQuery] = useState('');
+  const [filter, setFilter] = useState<'all' | 'today' | 'upcoming'>('all');
 
   const filteredClients = useMemo(() => {
+    let result = clients;
+    
+    // Apply filter
+    if (filter === 'today') {
+      result = result.filter((client) => {
+        if (!client.followUpDate) return false;
+        return isToday(parseISO(client.followUpDate));
+      });
+    } else if (filter === 'upcoming') {
+      result = result.filter((client) => {
+        if (!client.followUpDate) return false;
+        const date = parseISO(client.followUpDate);
+        return !isPast(date) || isToday(date);
+      });
+    }
+
+    // Apply search
     if (!searchQuery.trim()) {
-      return clients;
+      return result;
     }
 
     const query = searchQuery.toLowerCase();
-    return clients.filter(
+    return result.filter(
       (client) =>
         client.nameOfCustomer.toLowerCase().includes(query) ||
         client.contactNumber.includes(query) ||
@@ -41,19 +61,14 @@ export const ClientListScreen: React.FC = () => {
           client.nameOfCoApplicant.toLowerCase().includes(query)) ||
         client.loginBankName.toLowerCase().includes(query)
     );
-  }, [clients, searchQuery]);
+  }, [clients, searchQuery, filter]);
 
-  const getFollowUpBadgeStyle = (followUpDate: string | null) => {
-    if (!followUpDate) return null;
-    
+  const getStatusVariant = (followUpDate: string | null) => {
+    if (!followUpDate) return 'dueSoon' as const;
     const date = parseISO(followUpDate);
-    if (isPast(date) && !isToday(date)) {
-      return { backgroundColor: theme.colors.error };
-    }
-    if (isToday(date)) {
-      return { backgroundColor: theme.colors.accent.gold };
-    }
-    return { backgroundColor: theme.colors.accent.blue };
+    if (isPast(date) && !isToday(date)) return 'urgent' as const;
+    if (isToday(date)) return 'today' as const;
+    return 'dueSoon' as const;
   };
 
   const renderClientCard = ({ item }: { item: Client }) => (
@@ -62,35 +77,34 @@ export const ClientListScreen: React.FC = () => {
       onPress={() => navigation.navigate('ClientDetail', { clientId: item.id })}
       variant="hover"
     >
-      <View style={styles.clientHeader}>
+      <View style={styles.clientCardContent}>
+        <ProfilePicture
+          name={item.nameOfCustomer}
+          size="medium"
+          style={styles.profilePicture}
+        />
         <View style={styles.clientInfo}>
           <Text style={styles.clientName}>{item.nameOfCustomer}</Text>
-          {item.nameOfCoApplicant && (
-            <Text style={styles.coApplicant}>
-              + {item.nameOfCoApplicant}
-            </Text>
+          {item.followUpDate && (
+            <View style={styles.followUpRow}>
+              <Text style={styles.followUpLabel}>Follow-up </Text>
+              <Text style={styles.followUpDate}>
+                {format(parseISO(item.followUpDate), 'dd MMMM')}
+              </Text>
+            </View>
           )}
+          <Text style={styles.bankName}>{item.loginBankName}</Text>
         </View>
         {item.followUpDate && (
-          <View
-            style={[styles.followUpBadge, getFollowUpBadgeStyle(item.followUpDate)]}
-          >
-            <Text style={styles.followUpBadgeText}>
-              {isToday(parseISO(item.followUpDate))
-                ? 'Today'
-                : format(parseISO(item.followUpDate), 'dd MMM')}
-            </Text>
-          </View>
+          <StatusBadge variant={getStatusVariant(item.followUpDate)}>
+            {isToday(parseISO(item.followUpDate))
+              ? 'Today'
+              : isPast(parseISO(item.followUpDate))
+              ? 'Urgent'
+              : format(parseISO(item.followUpDate), 'dd MMM')}
+          </StatusBadge>
         )}
       </View>
-
-      <View style={styles.clientDetails}>
-        <Text style={styles.clientDetailText}>
-          {item.loginBankName}
-        </Text>
-        <Text style={styles.clientDetailText}>{item.contactNumber}</Text>
-      </View>
-
       {item.requiredLoanAmount && (
         <Text style={styles.loanAmount}>
           ₹{parseInt(item.requiredLoanAmount).toLocaleString('en-IN')}
@@ -113,6 +127,49 @@ export const ClientListScreen: React.FC = () => {
           value={searchQuery}
           onChangeText={setSearchQuery}
         />
+      </View>
+
+      {/* Filter Tabs */}
+      <View style={styles.filterContainer}>
+        <TouchableOpacity
+          style={[styles.filterTab, filter === 'all' && styles.filterTabActive]}
+          onPress={() => setFilter('all')}
+        >
+          <Text
+            style={[
+              styles.filterTabText,
+              filter === 'all' && styles.filterTabTextActive,
+            ]}
+          >
+            All
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.filterTab, filter === 'today' && styles.filterTabActive]}
+          onPress={() => setFilter('today')}
+        >
+          <Text
+            style={[
+              styles.filterTabText,
+              filter === 'today' && styles.filterTabTextActive,
+            ]}
+          >
+            Today
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.filterTab, filter === 'upcoming' && styles.filterTabActive]}
+          onPress={() => setFilter('upcoming')}
+        >
+          <Text
+            style={[
+              styles.filterTabText,
+              filter === 'upcoming' && styles.filterTabTextActive,
+            ]}
+          >
+            Upcoming
+          </Text>
+        </TouchableOpacity>
       </View>
 
       <FlatList
@@ -160,6 +217,7 @@ const styles = StyleSheet.create({
   },
   searchContainer: {
     padding: theme.spacing.md,
+    paddingBottom: theme.spacing.sm,
   },
   searchInput: {
     backgroundColor: theme.colors.background.card,
@@ -169,6 +227,33 @@ const styles = StyleSheet.create({
     color: theme.colors.text.primary,
     borderWidth: 1,
     borderColor: theme.colors.border.default,
+    height: 52,
+  },
+  filterContainer: {
+    flexDirection: 'row',
+    paddingHorizontal: theme.spacing.md,
+    paddingBottom: theme.spacing.md,
+    gap: theme.spacing.sm,
+  },
+  filterTab: {
+    paddingVertical: theme.spacing.sm,
+    paddingHorizontal: theme.spacing.md,
+    borderRadius: theme.borderRadius.full,
+    borderWidth: 1,
+    borderColor: theme.colors.border.default,
+    backgroundColor: 'transparent',
+  },
+  filterTabActive: {
+    backgroundColor: theme.colors.accent.gold,
+    borderColor: theme.colors.accent.gold,
+  },
+  filterTabText: {
+    ...theme.typography.bodyBold,
+    color: theme.colors.text.secondary,
+    fontSize: 14,
+  },
+  filterTabTextActive: {
+    color: '#111217',
   },
   listContent: {
     padding: theme.spacing.md,
@@ -178,11 +263,12 @@ const styles = StyleSheet.create({
     marginBottom: theme.spacing.md,
     padding: theme.spacing.md,
   },
-  clientHeader: {
+  clientCardContent: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: theme.spacing.sm,
+    alignItems: 'center',
+  },
+  profilePicture: {
+    marginRight: theme.spacing.md,
   },
   clientInfo: {
     flex: 1,
@@ -192,28 +278,24 @@ const styles = StyleSheet.create({
     color: theme.colors.text.primary,
     marginBottom: theme.spacing.xs / 2,
   },
-  coApplicant: {
+  followUpRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: theme.spacing.xs / 2,
+  },
+  followUpLabel: {
     ...theme.typography.caption,
     color: theme.colors.text.secondary,
   },
-  followUpBadge: {
-    paddingHorizontal: theme.spacing.sm,
-    paddingVertical: theme.spacing.xs,
-    borderRadius: theme.borderRadius.sm,
-  },
-  followUpBadgeText: {
-    ...theme.typography.small,
-    color: '#FFFFFF',
+  followUpDate: {
+    ...theme.typography.caption,
+    color: theme.colors.text.primary,
     fontWeight: '600',
   },
-  clientDetails: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: theme.spacing.sm,
-  },
-  clientDetailText: {
+  bankName: {
     ...theme.typography.caption,
     color: theme.colors.text.secondary,
+    fontSize: 12,
   },
   loanAmount: {
     ...theme.typography.bodyBold,
@@ -242,4 +324,3 @@ const styles = StyleSheet.create({
     color: theme.colors.accent.gold,
   },
 });
-

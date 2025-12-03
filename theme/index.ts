@@ -23,6 +23,24 @@ export const theme = {
     },
     error: '#FF6B6B',
     success: '#51CF66',
+    urgent: '#FF4444',
+    dueSoon: '#FF9800',
+  },
+  gradients: {
+    background: ['#111217', '#181A20'],
+    card: ['rgba(255, 255, 255, 0.05)', 'rgba(255, 255, 255, 0.08)'],
+    gold: ['#D4AF37', '#E8C547'],
+  },
+  glassmorphism: {
+    card: {
+      backgroundColor: 'rgba(255, 255, 255, 0.05)',
+      borderWidth: 1,
+      borderColor: 'rgba(255, 255, 255, 0.1)',
+      // Note: backdrop-filter needs to be handled per platform
+    },
+    cardHover: {
+      backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    },
   },
   spacing: {
     xs: 4,
